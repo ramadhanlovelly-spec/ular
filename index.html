@@ -1,0 +1,453 @@
+import pygame
+import random
+import sys
+
+# Inisialisasi pygame
+pygame.init()
+
+# ==================== PENGATURAN ====================
+# Ukuran layar
+LEBAR_LAYAR = 600
+TINGGI_LAYAR = 600
+
+# Ukuran grid
+UKURAN_BLOK = 20
+
+# Warna
+HITAM = (0, 0, 0)
+PUTIH = (255, 255, 255)
+MERAH = (255, 0, 0)
+HIJAU = (0, 200, 0)
+HIJAU_TUA = (0, 150, 0)
+BIRU = (0, 0, 255)
+ABU_ABU = (50, 50, 50)
+KUNING = (255, 255, 0)
+ORANYE = (255, 165, 0)
+
+# FPS
+FPS = 10
+
+# ==================== KELAS ULAR ====================
+class Ular:
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        """Reset ular ke posisi awal"""
+        self.posisi = [
+            [LEBAR_LAYAR // 2, TINGGI_LAYAR // 2],
+            [LEBAR_LAYAR // 2 - UKURAN_BLOK, TINGGI_LAYAR // 2],
+            [LEBAR_LAYAR // 2 - 2 * UKURAN_BLOK, TINGGI_LAYAR // 2]
+        ]
+        self.arah = "KANAN"
+        self.arah_baru = "KANAN"
+        self.hidup = True
+        self.skor = 0
+
+    def ubah_arah(self, arah_baru):
+        """Ubah arah ular (tidak boleh berbalik 180 derajat)"""
+        lawan = {
+            "ATAS": "BAWAH",
+            "BAWAH": "ATAS",
+            "KIRI": "KANAN",
+            "KANAN": "KIRI"
+        }
+        if arah_baru != lawan.get(self.arah):
+            self.arah_baru = arah_baru
+
+    def bergerak(self):
+        """Gerakkan ular satu langkah"""
+        self.arah = self.arah_baru
+        kepala = self.posisi[0].copy()
+
+        if self.arah == "ATAS":
+            kepala[1] -= UKURAN_BLOK
+        elif self.arah == "BAWAH":
+            kepala[1] += UKURAN_BLOK
+        elif self.arah == "KIRI":
+            kepala[0] -= UKURAN_BLOK
+        elif self.arah == "KANAN":
+            kepala[0] += UKURAN_BLOK
+
+        self.posisi.insert(0, kepala)
+        return kepala
+
+    def tumbuh(self):
+        """Ular bertambah panjang (tidak menghapus ekor)"""
+        self.skor += 10
+
+    def potong_ekor(self):
+        """Hapus ekor ular"""
+        self.posisi.pop()
+
+    def cek_tabrakan(self):
+        """Cek apakah ular menabrak dinding atau dirinya sendiri"""
+        kepala = self.posisi[0]
+
+        # Tabrakan dengan dinding
+        if (kepala[0] < 0 or kepala[0] >= LEBAR_LAYAR or
+            kepala[1] < 0 or kepala[1] >= TINGGI_LAYAR):
+            return True
+
+        # Tabrakan dengan tubuh sendiri
+        if kepala in self.posisi[1:]:
+            return True
+
+        return False
+
+    def gambar(self, layar):
+        """Gambar ular di layar"""
+        for i, blok in enumerate(self.posisi):
+            if i == 0:
+                # Kepala ular
+                pygame.draw.rect(layar, HIJAU,
+                               (blok[0], blok[1], UKURAN_BLOK, UKURAN_BLOK))
+                pygame.draw.rect(layar, HIJAU_TUA,
+                               (blok[0], blok[1], UKURAN_BLOK, UKURAN_BLOK), 2)
+
+                # Mata ular
+                mata_ukuran = 4
+                if self.arah == "KANAN":
+                    mata1 = (blok[0] + 14, blok[1] + 4)
+                    mata2 = (blok[0] + 14, blok[1] + 12)
+                elif self.arah == "KIRI":
+                    mata1 = (blok[0] + 2, blok[1] + 4)
+                    mata2 = (blok[0] + 2, blok[1] + 12)
+                elif self.arah == "ATAS":
+                    mata1 = (blok[0] + 4, blok[1] + 2)
+                    mata2 = (blok[0] + 12, blok[1] + 2)
+                else:
+                    mata1 = (blok[0] + 4, blok[1] + 14)
+                    mata2 = (blok[0] + 12, blok[1] + 14)
+
+                pygame.draw.circle(layar, PUTIH, mata1, mata_ukuran)
+                pygame.draw.circle(layar, PUTIH, mata2, mata_ukuran)
+                pygame.draw.circle(layar, HITAM, mata1, 2)
+                pygame.draw.circle(layar, HITAM, mata2, 2)
+            else:
+                # Tubuh ular
+                warna = HIJAU if i % 2 == 0 else HIJAU_TUA
+                pygame.draw.rect(layar, warna,
+                               (blok[0] + 1, blok[1] + 1,
+                                UKURAN_BLOK - 2, UKURAN_BLOK - 2),
+                               border_radius=4)
+
+
+# ==================== KELAS MAKANAN ====================
+class Makanan:
+    def __init__(self):
+        self.posisi = [0, 0]
+        self.jenis = "biasa"  # biasa atau spesial
+        self.waktu_spesial = 0
+        self.acak_posisi([])
+
+    def acak_posisi(self, posisi_ular):
+        """Tempatkan makanan di posisi acak yang tidak ditempati ular"""
+        while True:
+            x = random.randrange(0, LEBAR_LAYAR, UKURAN_BLOK)
+            y = random.randrange(0, TINGGI_LAYAR, UKURAN_BLOK)
+            if [x, y] not in posisi_ular:
+                self.posisi = [x, y]
+                # 20% kemungkinan makanan spesial
+                if random.random() < 0.2:
+                    self.jenis = "spesial"
+                    self.waktu_spesial = pygame.time.get_ticks()
+                else:
+                    self.jenis = "biasa"
+                break
+
+    def gambar(self, layar):
+        """Gambar makanan di layar"""
+        x, y = self.posisi
+        if self.jenis == "biasa":
+            # Apel merah
+            pygame.draw.circle(layar, MERAH,
+                             (x + UKURAN_BLOK // 2, y + UKURAN_BLOK // 2),
+                             UKURAN_BLOK // 2 - 1)
+            # Daun
+            pygame.draw.ellipse(layar, HIJAU,
+                              (x + UKURAN_BLOK // 2 - 2, y - 2, 8, 6))
+        else:
+            # Makanan spesial (bintang kuning)
+            pygame.draw.circle(layar, KUNING,
+                             (x + UKURAN_BLOK // 2, y + UKURAN_BLOK // 2),
+                             UKURAN_BLOK // 2 - 1)
+            pygame.draw.circle(layar, ORANYE,
+                             (x + UKURAN_BLOK // 2, y + UKURAN_BLOK // 2),
+                             UKURAN_BLOK // 2 - 3)
+
+
+# ==================== KELAS GAME ====================
+class Game:
+    def __init__(self):
+        self.layar = pygame.display.set_mode((LEBAR_LAYAR, TINGGI_LAYAR + 60))
+        pygame.display.set_caption("🐍 Game Ular - Snake Game 🐍")
+        self.clock = pygame.time.Clock()
+        self.font_besar = pygame.font.SysFont("arial", 48, bold=True)
+        self.font_sedang = pygame.font.SysFont("arial", 28, bold=True)
+        self.font_kecil = pygame.font.SysFont("arial", 20)
+        self.ular = Ular()
+        self.makanan = Makanan()
+        self.skor_tertinggi = 0
+        self.status = "MENU"  # MENU, MAIN, GAME_OVER, PAUSE
+
+    def gambar_grid(self):
+        """Gambar grid di layar"""
+        for x in range(0, LEBAR_LAYAR, UKURAN_BLOK):
+            for y in range(0, TINGGI_LAYAR, UKURAN_BLOK):
+                rect = pygame.Rect(x, y, UKURAN_BLOK, UKURAN_BLOK)
+                if (x // UKURAN_BLOK + y // UKURAN_BLOK) % 2 == 0:
+                    pygame.draw.rect(self.layar, (30, 30, 30), rect)
+                else:
+                    pygame.draw.rect(self.layar, (25, 25, 25), rect)
+
+    def gambar_panel_skor(self):
+        """Gambar panel skor di bawah"""
+        panel = pygame.Rect(0, TINGGI_LAYAR, LEBAR_LAYAR, 60)
+        pygame.draw.rect(self.layar, (40, 40, 40), panel)
+        pygame.draw.line(self.layar, HIJAU, (0, TINGGI_LAYAR),
+                        (LEBAR_LAYAR, TINGGI_LAYAR), 3)
+
+        # Skor
+        teks_skor = self.font_kecil.render(
+            f"🏆 Skor: {self.ular.skor}", True, PUTIH)
+        self.layar.blit(teks_skor, (20, TINGGI_LAYAR + 18))
+
+        # Panjang ular
+        teks_panjang = self.font_kecil.render(
+            f"📏 Panjang: {len(self.ular.posisi)}", True, PUTIH)
+        self.layar.blit(teks_panjang, (200, TINGGI_LAYAR + 18))
+
+        # Skor tertinggi
+        teks_tinggi = self.font_kecil.render(
+            f"⭐ Tertinggi: {self.skor_tertinggi}", True, KUNING)
+        self.layar.blit(teks_tinggi, (420, TINGGI_LAYAR + 18))
+
+    def tampilkan_menu(self):
+        """Tampilkan menu utama"""
+        self.layar.fill(HITAM)
+
+        # Judul
+        judul = self.font_besar.render("GAME ULAR", True, HIJAU)
+        rect_judul = judul.get_rect(center=(LEBAR_LAYAR // 2, 150))
+        self.layar.blit(judul, rect_judul)
+
+        # Emoji ular
+        emoji = self.font_besar.render("🐍", True, PUTIH)
+        rect_emoji = emoji.get_rect(center=(LEBAR_LAYAR // 2, 220))
+        self.layar.blit(emoji, rect_emoji)
+
+        # Instruksi
+        instruksi = [
+            "Tekan ENTER untuk Mulai",
+            "",
+            "Kontrol:",
+            "Arrow Keys / WASD - Gerak",
+            "P - Pause",
+            "ESC - Keluar",
+            "",
+            f"Skor Tertinggi: {self.skor_tertinggi}"
+        ]
+
+        for i, teks in enumerate(instruksi):
+            if i == 0:
+                warna = KUNING
+                font = self.font_sedang
+            elif "Skor" in teks:
+                warna = ORANYE
+                font = self.font_kecil
+            else:
+                warna = PUTIH
+                font = self.font_kecil
+
+            render = font.render(teks, True, warna)
+            rect = render.get_rect(center=(LEBAR_LAYAR // 2, 300 + i * 35))
+            self.layar.blit(render, rect)
+
+        pygame.display.update()
+
+    def tampilkan_game_over(self):
+        """Tampilkan layar game over"""
+        # Overlay gelap
+        overlay = pygame.Surface((LEBAR_LAYAR, TINGGI_LAYAR + 60))
+        overlay.set_alpha(180)
+        overlay.fill(HITAM)
+        self.layar.blit(overlay, (0, 0))
+
+        # Teks Game Over
+        teks_go = self.font_besar.render("GAME OVER!", True, MERAH)
+        rect_go = teks_go.get_rect(center=(LEBAR_LAYAR // 2, 200))
+        self.layar.blit(teks_go, rect_go)
+
+        # Skor
+        teks_skor = self.font_sedang.render(
+            f"Skor Anda: {self.ular.skor}", True, PUTIH)
+        rect_skor = teks_skor.get_rect(center=(LEBAR_LAYAR // 2, 280))
+        self.layar.blit(teks_skor, rect_skor)
+
+        # Skor tertinggi
+        if self.ular.skor >= self.skor_tertinggi:
+            teks_baru = self.font_sedang.render(
+                "🎉 SKOR TERTINGGI BARU! 🎉", True, KUNING)
+            rect_baru = teks_baru.get_rect(center=(LEBAR_LAYAR // 2, 330))
+            self.layar.blit(teks_baru, rect_baru)
+
+        # Instruksi
+        teks_ulang = self.font_kecil.render(
+            "Tekan ENTER untuk Main Lagi", True, HIJAU)
+        rect_ulang = teks_ulang.get_rect(center=(LEBAR_LAYAR // 2, 400))
+        self.layar.blit(teks_ulang, rect_ulang)
+
+        teks_menu = self.font_kecil.render(
+            "Tekan ESC untuk ke Menu", True, ABU_ABU)
+        rect_menu = teks_menu.get_rect(center=(LEBAR_LAYAR // 2, 440))
+        self.layar.blit(teks_menu, rect_menu)
+
+        pygame.display.update()
+
+    def tampilkan_pause(self):
+        """Tampilkan layar pause"""
+        overlay = pygame.Surface((LEBAR_LAYAR, TINGGI_LAYAR + 60))
+        overlay.set_alpha(150)
+        overlay.fill(HITAM)
+        self.layar.blit(overlay, (0, 0))
+
+        teks_pause = self.font_besar.render("PAUSE", True, KUNING)
+        rect_pause = teks_pause.get_rect(center=(LEBAR_LAYAR // 2, 300))
+        self.layar.blit(teks_pause, rect_pause)
+
+        teks_lanjut = self.font_kecil.render(
+            "Tekan P untuk Lanjut", True, PUTIH)
+        rect_lanjut = teks_lanjut.get_rect(center=(LEBAR_LAYAR // 2, 370))
+        self.layar.blit(teks_lanjut, rect_lanjut)
+
+        pygame.display.update()
+
+    def main_loop(self):
+        """Loop utama game"""
+        while True:
+            if self.status == "MENU":
+                self.handle_menu()
+            elif self.status == "MAIN":
+                self.handle_main()
+            elif self.status == "GAME_OVER":
+                self.handle_game_over()
+            elif self.status == "PAUSE":
+                self.handle_pause()
+
+    def handle_menu(self):
+        """Handle event di menu"""
+        self.tampilkan_menu()
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_RETURN:
+                    self.ular.reset()
+                    self.makanan.acak_posisi(self.ular.posisi)
+                    self.status = "MAIN"
+                elif event.key == pygame.K_ESCAPE:
+                    pygame.quit()
+                    sys.exit()
+        self.clock.tick(30)
+
+    def handle_main(self):
+        """Handle event saat bermain"""
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key in (pygame.K_UP, pygame.K_w):
+                    self.ular.ubah_arah("ATAS")
+                elif event.key in (pygame.K_DOWN, pygame.K_s):
+                    self.ular.ubah_arah("BAWAH")
+                elif event.key in (pygame.K_LEFT, pygame.K_a):
+                    self.ular.ubah_arah("KIRI")
+                elif event.key in (pygame.K_RIGHT, pygame.K_d):
+                    self.ular.ubah_arah("KANAN")
+                elif event.key == pygame.K_p:
+                    self.status = "PAUSE"
+                    return
+                elif event.key == pygame.K_ESCAPE:
+                    self.status = "MENU"
+                    return
+
+        # Gerakkan ular
+        kepala_baru = self.ular.bergerak()
+
+        # Cek makan makanan
+        if kepala_baru == self.makanan.posisi:
+            if self.makanan.jenis == "spesial":
+                self.ular.skor += 20  # Bonus spesial
+            self.ular.tumbuh()
+            self.makanan.acak_posisi(self.ular.posisi)
+        else:
+            self.ular.potong_ekor()
+
+        # Cek tabrakan
+        if self.ular.cek_tabrakan():
+            if self.ular.skor > self.skor_tertinggi:
+                self.skor_tertinggi = self.ular.skor
+            self.status = "GAME_OVER"
+            return
+
+        # Gambar semuanya
+        self.layar.fill(HITAM)
+        self.gambar_grid()
+        self.makanan.gambar(self.layar)
+        self.ular.gambar(self.layar)
+        self.gambar_panel_skor()
+
+        pygame.display.update()
+
+        # Kecepatan bertambah seiring skor
+        kecepatan = FPS + (self.ular.skor // 50)
+        self.clock.tick(min(kecepatan, 25))  # Maksimal 25 FPS
+
+    def handle_game_over(self):
+        """Handle event saat game over"""
+        self.tampilkan_game_over()
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_RETURN:
+                    self.ular.reset()
+                    self.makanan.acak_posisi(self.ular.posisi)
+                    self.status = "MAIN"
+                elif event.key == pygame.K_ESCAPE:
+                    self.status = "MENU"
+        self.clock.tick(30)
+
+    def handle_pause(self):
+        """Handle event saat pause"""
+        self.tampilkan_pause()
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_p:
+                    self.status = "MAIN"
+                elif event.key == pygame.K_ESCAPE:
+                    self.status = "MENU"
+        self.clock.tick(30)
+
+
+# ==================== JALANKAN GAME ====================
+if __name__ == "__main__":
+    print("=" * 50)
+    print("   🐍 GAME ULAR - SNAKE GAME 🐍")
+    print("=" * 50)
+    print("Kontrol:")
+    print("  Arrow Keys / WASD  = Gerak")
+    print("  P                  = Pause")
+    print("  ESC                = Menu / Keluar")
+    print("  ENTER              = Mulai / Main Lagi")
+    print("=" * 50)
+
+    game = Game()
+    game.main_loop()
